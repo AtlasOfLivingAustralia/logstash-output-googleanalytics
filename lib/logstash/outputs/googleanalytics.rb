@@ -65,7 +65,7 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
   public
   def multi_receive(events)
     body = []
-    @logger.info("Googleanalytics: Received #{events.size} events")
+    @logger.debug("Googleanalytics: Received #{events.size} events")
 
     # batch events into one request to GA
     events.each do |event|
@@ -103,7 +103,7 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
     end
 
     payload = body.join("\n")
-    @logger.info("Googleanalytics: payload #{payload}")
+    @logger.debug("Googleanalytics: payload #{payload}")
 
     # sent request to GA
     uri = URI.parse(@url)
@@ -112,7 +112,7 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
     request = Net::HTTP::Post.new(uri.request_uri, 'Content-Type' => 'application/x-www-form-urlencoded ')
     request.body = payload
     res = http.request(request)
-    @logger.info("Googleanalytics: Successfully submitted to GA #{res.body}")
+    @logger.debug("Googleanalytics: Successfully submitted to GA #{res.body}")
 
     return "Event received"
   end # def event
@@ -134,7 +134,7 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
     md5 = Digest::MD5.new
     encoded_string = md5.hexdigest(message)
     uuid = encoded_string.unpack("m0").first.unpack("H8H4H4H4H12").join('-')
-    @logger.info("Googleanalytics: uuid generated #{uuid}")
+    @logger.debug("Googleanalytics: uuid generated #{uuid}")
     return uuid
   end
 
