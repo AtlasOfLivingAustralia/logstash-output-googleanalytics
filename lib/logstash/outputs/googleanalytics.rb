@@ -2,6 +2,7 @@
 require "logstash/outputs/base"
 require "logstash/namespace"
 require "digest/md5"
+require "net/http"
 require "erb"
 include ERB::Util
 
@@ -33,11 +34,19 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
   # The field name having client's ip address.
   config :client_ip, :validate => :string, :default => "clientip"
 
+  # The field name which contains the full request path i.e. it must have host name and request path.
+  config :full_path, :validate => :string
+
   # The field name which contains the request path.
-  config :page_path, :validate => :string, :default => "request"
+  config :page_path, :validate => :string
 
   # The field name containing host name.
-  config :host_name, :validate => :string, :default => "hostname"
+  config :host_name, :validate => :string
+
+  # Custom dimension that will be sent with every request. The position of elements in array is used to determine the
+  # custom dimension index. Make sure the custom dimensions are registered with GA first. More details on how to setup
+  # check this link - https://support.google.com/analytics/answer/2709829.
+  config :custom_dimension, :validate => :array, :default => ["ws"]
 
   # The field name containing user agent string.
   config :user_agent, :validate => :string, :default => "agent"
@@ -71,14 +80,23 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
       params << "tid=#{@tracking_id}"
       params << "t=#{@hit}"
       params << "ds=" + url_encode(event.sprintf(@data_source))
-      # todo: parse client id from ga
       params << "cid=" + url_encode(client_id)
-      params << "dp=" + url_encode(event.get(@page_path))
-      params << "dh=" + url_encode(event.get(@host_name))
+      if !@full_path.nil? && !@full_path.empty?
+        params << "dl=" + url_encode(event.get(@full_path))
+      else
+        params << "dp=" + url_encode(event.get(@page_path))
+        params << "dh=" + url_encode(event.get(@host_name))
+      end
+
       params << "dt=" + url_encode(@title)
       params << "dr=" + url_encode(event.get(@referrer))
       params << "uip=" + url_encode(ip)
       params << "ua=" + url_encode(user_agent)
+
+      # custom dimension
+      @custom_dimension.each_with_index do |value, index|
+        params << "cd" + (index + 1).to_s + "=" + url_encode(value)
+      end
 
       body << params.join('&')
 
@@ -100,14 +118,18 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
   end # def event
 
   # generate client id from cookie. If cookie not present generate id from ip address and user agent combined.
-  def generate_client_id(client_id, ip, user_agent)
-    if !( client_id.nil? || client_id.empty?)
-      return parse_client_id_from_cookie(client_id)
-    else
-      return generate_uuid(ip + user_agent)
+  def generate_client_id(cookie, ip, user_agent)
+    if !( cookie.nil? || cookie.empty?)
+      client_id = parse_client_id_from_cookie(cookie)
+      if !client_id.nil?
+        return client_id
+      end
     end
+
+    return generate_uuid(ip + user_agent)
   end
 
+  # Generate UUID from string.
   def generate_uuid(message)
     md5 = Digest::MD5.new
     encoded_string = md5.hexdigest(message)
@@ -116,7 +138,11 @@ class LogStash::Outputs::Googleanalytics < LogStash::Outputs::Base
     return uuid
   end
 
+  # Parse analytics cookie snd extract client id
   def parse_client_id_from_cookie(cookie)
-    return cookie
+    parts = cookie.split('.')
+    if(parts.size == 4 &&  parts[0] == 'GA1')
+      return parts[2] + '.' + parts[3]
+    end
   end
 end # class LogStash::Outputs::Googleanalytics
